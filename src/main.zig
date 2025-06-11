@@ -227,7 +227,7 @@ pub fn main() !void {
                                             } };
                                             rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
                                         } else if (rule_str2[0] == 'p') {
-                                            rule_added_ue = .{ .include_wrong_pos = .{
+                                            rule_added_ue = .{ .include_right_pos = .{
                                                 .letter = letter,
                                                 .pos = num_str - '1',
                                             } };
