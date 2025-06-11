@@ -1,3 +1,4 @@
 .zig-cache/
 .vscode/
 zig-out/
+words_long.txt

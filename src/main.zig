@@ -178,6 +178,7 @@ pub fn main() !void {
                             \\n to include a letter, but not in this position. Format: 'n (letter)1-5'
                             \\p to include a letter in this exact position. Format: 'p (letter)1-5'
                             \\r to remove all rules. Format: 'r'
+                            \\Write the same rule again to remove it.
                             \\Add nothing to return to menu.
                             \\
                         ;
@@ -191,6 +192,7 @@ pub fn main() !void {
                                     const rule_str2 = remove_r(rule_str);
                                     if (rule_str2.len == 0) break :rules_loop;
                                     var rule_added: bool = false;
+                                    var rule_added_ue: Rule = undefined;
                                     if (rule_str2.len == 1 and rule_str2[0] == 'r') {
                                         rule_list.list.clearRetainingCapacity();
                                         try stdout.writeAll(comptime ANSI("Removed all rules.\n", .{ 1, 32 }));
@@ -205,7 +207,8 @@ pub fn main() !void {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
-                                        rule_added = try rule_list.insert_unique(allocator, .{ .exclude = letter });
+                                        rule_added_ue = .{ .exclude = letter };
+                                        rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
                                     } else if (rule_str2.len == 4) {
                                         const num_str = rule_str2[3];
                                         if (rule_str2[1] != ' ' or num_str < '1' or num_str > '5') {
@@ -218,21 +221,17 @@ pub fn main() !void {
                                             continue;
                                         }
                                         if (rule_str2[0] == 'n') {
-                                            rule_added = try rule_list.insert_unique(
-                                                allocator,
-                                                .{ .include_wrong_pos = .{
-                                                    .letter = letter,
-                                                    .pos = num_str - '1',
-                                                } },
-                                            );
+                                            rule_added_ue = .{ .include_wrong_pos = .{
+                                                .letter = letter,
+                                                .pos = num_str - '1',
+                                            } };
+                                            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
                                         } else if (rule_str2[0] == 'p') {
-                                            rule_added = try rule_list.insert_unique(
-                                                allocator,
-                                                .{ .include_right_pos = .{
-                                                    .letter = letter,
-                                                    .pos = num_str - '1',
-                                                } },
-                                            );
+                                            rule_added_ue = .{ .include_wrong_pos = .{
+                                                .letter = letter,
+                                                .pos = num_str - '1',
+                                            } };
+                                            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
                                         } else {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
@@ -243,7 +242,10 @@ pub fn main() !void {
                                     }
                                     if (rule_added) {
                                         try stdout.print(ANSI("'{s}' rule added.\n", .{ 1, 32 }), .{rule_str2});
-                                    } else try stdout.print(ANSI("'{s}' rule already added.\n", .{ 1, 33 }), .{rule_str2});
+                                    } else {
+                                        _ = rule_list.remove(rule_added_ue);
+                                        try stdout.print(ANSI("'{s}' rule deleted.\n", .{ 1, 32 }), .{rule_str2});
+                                    }
                                 }
                             } else |_| continue;
                         }
