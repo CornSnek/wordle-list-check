@@ -70,6 +70,10 @@ fn rules_added_print(stdout: anytype, rule_list: RuleList) !void {
     }
     try stdout.writeAll(comptime ANSI("]\n", .{ 1, 34 }));
 }
+///Removes '\r' in Windows only when it's a terminal input newline as '\r\n'
+inline fn remove_r(opt: []u8) []const u8 {
+    return if (@import("builtin").os.tag == .windows) std.mem.trimRight(u8, opt, "\r") else opt;
+}
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
     defer _ = gpa.deinit();
@@ -120,7 +124,8 @@ pub fn main() !void {
         if (stdin.readUntilDelimiterOrEof(&buf, '\n')) |buf_opt| {
             if (buf_opt) |opt| {
                 if (opt.len == 0) continue;
-                switch (opt[0]) {
+                const opt2 = remove_r(opt);
+                switch (opt2[0]) {
                     'e' => break :main,
                     'a' => {
                         try stdout.writeAll(comptime ANSI("Add a 5-letter word to the list. Add nothing to return to menu.\n", .{ 1, 34 }));
@@ -129,17 +134,18 @@ pub fn main() !void {
                             try prompt_str(stdout);
                             if (stdin.readUntilDelimiterOrEof(&word_buf, '\n')) |word_buf_opt| {
                                 if (word_buf_opt) |add_word| {
-                                    if (add_word.len == 5) {
+                                    const add_word2 = remove_r(add_word);
+                                    if (add_word2.len == 5) {
                                         var add_word_to_list: [5]u8 = undefined;
-                                        _ = std.ascii.upperString(&add_word_to_list, add_word);
+                                        _ = std.ascii.upperString(&add_word_to_list, add_word2);
                                         const is_word_unique = try word_map.insert_unique(allocator, .{ .word = add_word_to_list });
                                         if (is_word_unique) {
                                             try stdout.print(ANSI("{s} added to list.\n", .{ 1, 32 }), .{add_word_to_list});
                                         } else try stdout.print(ANSI("{s} already added.\n", .{ 1, 33 }), .{add_word_to_list});
                                         continue;
                                     }
-                                    if (add_word.len == 0) break :add_loop;
-                                    try stdout.print(ANSI("Unable to add '{s}' to list (Not a 5-letter word).\n", .{ 1, 31 }), .{add_word});
+                                    if (add_word2.len == 0) break :add_loop;
+                                    try stdout.print(ANSI("Unable to add '{s}' to list (Not a 5-letter word).\n", .{ 1, 31 }), .{add_word2});
                                 }
                             } else |_| continue;
                         }
@@ -151,15 +157,16 @@ pub fn main() !void {
                             try prompt_str(stdout);
                             if (stdin.readUntilDelimiterOrEof(&word_buf, '\n')) |word_buf_opt| {
                                 if (word_buf_opt) |rem_word| {
-                                    if (rem_word.len == 5) {
+                                    const rem_word2 = remove_r(rem_word);
+                                    if (rem_word2.len == 5) {
                                         var rem_word_to_list: [5]u8 = undefined;
-                                        _ = std.ascii.upperString(&rem_word_to_list, rem_word);
+                                        _ = std.ascii.upperString(&rem_word_to_list, rem_word2);
                                         const word_removed = word_map.remove(.{ .word = rem_word_to_list });
                                         if (word_removed) {
                                             try stdout.print(ANSI("{s} deleted from list.\n", .{ 1, 32 }), .{rem_word_to_list});
                                         } else try stdout.print(ANSI("{s} not in list.\n", .{ 1, 33 }), .{rem_word_to_list});
                                     }
-                                    if (rem_word.len == 0) break :rem_loop;
+                                    if (rem_word2.len == 0) break :rem_loop;
                                 }
                             } else |_| continue;
                         }
@@ -181,35 +188,36 @@ pub fn main() !void {
                             var rules_buf: [6]u8 = undefined;
                             if (stdin.readUntilDelimiterOrEof(&rules_buf, '\n')) |rules_buf_opt| {
                                 if (rules_buf_opt) |rule_str| {
-                                    if (rule_str.len == 0) break :rules_loop;
+                                    const rule_str2 = remove_r(rule_str);
+                                    if (rule_str2.len == 0) break :rules_loop;
                                     var rule_added: bool = false;
-                                    if (rule_str.len == 1 and rule_str[0] == 'r') {
+                                    if (rule_str2.len == 1 and rule_str2[0] == 'r') {
                                         rule_list.list.clearRetainingCapacity();
                                         try stdout.writeAll(comptime ANSI("Removed all rules.\n", .{ 1, 32 }));
                                         continue;
-                                    } else if (rule_str.len == 3) {
-                                        if (rule_str[1] != ' ' or rule_str[0] != 'e') {
+                                    } else if (rule_str2.len == 3) {
+                                        if (rule_str2[1] != ' ' or rule_str2[0] != 'e') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
-                                        const letter = std.ascii.toUpper(rule_str[2]);
+                                        const letter = std.ascii.toUpper(rule_str2[2]);
                                         if (letter < 'A' or letter > 'Z') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
                                         rule_added = try rule_list.insert_unique(allocator, .{ .exclude = letter });
-                                    } else if (rule_str.len == 4) {
-                                        const num_str = rule_str[3];
-                                        if (rule_str[1] != ' ' or num_str < '1' or num_str > '5') {
+                                    } else if (rule_str2.len == 4) {
+                                        const num_str = rule_str2[3];
+                                        if (rule_str2[1] != ' ' or num_str < '1' or num_str > '5') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
-                                        const letter = std.ascii.toUpper(rule_str[2]);
+                                        const letter = std.ascii.toUpper(rule_str2[2]);
                                         if (letter < 'A' or letter > 'Z') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
-                                        if (rule_str[0] == 'n') {
+                                        if (rule_str2[0] == 'n') {
                                             rule_added = try rule_list.insert_unique(
                                                 allocator,
                                                 .{ .include_wrong_pos = .{
@@ -217,7 +225,7 @@ pub fn main() !void {
                                                     .pos = num_str - '1',
                                                 } },
                                             );
-                                        } else if (rule_str[0] == 'p') {
+                                        } else if (rule_str2[0] == 'p') {
                                             rule_added = try rule_list.insert_unique(
                                                 allocator,
                                                 .{ .include_right_pos = .{
@@ -234,8 +242,8 @@ pub fn main() !void {
                                         continue;
                                     }
                                     if (rule_added) {
-                                        try stdout.print(ANSI("'{s}' rule added.\n", .{ 1, 32 }), .{rule_str});
-                                    } else try stdout.print(ANSI("'{s}' rule already added.\n", .{ 1, 33 }), .{rule_str});
+                                        try stdout.print(ANSI("'{s}' rule added.\n", .{ 1, 32 }), .{rule_str2});
+                                    } else try stdout.print(ANSI("'{s}' rule already added.\n", .{ 1, 33 }), .{rule_str2});
                                 }
                             } else |_| continue;
                         }
