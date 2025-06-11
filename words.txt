@@ -1,0 +1,9 @@
+words
+rules
+split
+every
+token
+using space
+using
+lines
+must_be_five_letters
