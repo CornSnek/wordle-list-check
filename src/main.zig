@@ -276,13 +276,16 @@ pub fn main() !void {
                     },
                     'l' => {
                         try stdout.writeAll(comptime ANSI("Words in list: [ ", .{ 1, 34 }));
+                        try stdout.writeAll("\x1b[1;32m");
                         for (word_map.list.items) |wn|
-                            try stdout.print(ANSI("{s} ", .{ 1, 32 }), .{wn.word});
+                            try stdout.print("{s} ", .{wn.word});
+                        try stdout.writeAll("\x1b[0m");
                         try stdout.print(ANSI("]\nTotal words: {}\n", .{ 1, 34 }), .{word_map.list.items.len});
                     },
                     'f' => {
                         try rules_added_print(stdout, rule_list);
                         try stdout.writeAll(comptime ANSI("Words filtered by rules: [ ", .{ 1, 34 }));
+                        try stdout.writeAll("\x1b[1;32m");
                         var filtered_total: usize = 0;
                         skip_word: for (word_map.list.items) |wn| {
                             for (rule_list.list.items) |rule| {
@@ -306,9 +309,10 @@ pub fn main() !void {
                                     .include_right_pos => |p| if (wn.word[p.pos] != p.letter) continue :skip_word,
                                 }
                             }
-                            try stdout.print(ANSI("{s} ", .{ 1, 32 }), .{wn.word});
+                            try stdout.print("{s} ", .{wn.word});
                             filtered_total += 1;
                         }
+                        try stdout.writeAll("\x1b[0m");
                         try stdout.print(ANSI("]\nTotal words: {}\n", .{ 1, 34 }), .{filtered_total});
                     },
                     'w' => {
@@ -352,24 +356,30 @@ pub fn main() !void {
                             }
                         }
                         try stdout.writeAll(comptime ANSI("Letter frequencies: [ ", .{ 1, 34 }));
+                        try stdout.writeAll("\x1b[1;33m");
                         for (letter_frequency_arr) |lf|
                             if (lf.frequency != 0)
-                                try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
+                                try stdout.print("[{c} => {}] ", .{ lf.letter, lf.frequency });
+                        try stdout.writeAll("\x1b[0m");
                         std.sort.block(LetterFrequency, &letter_frequency_arr, {}, LetterFrequency.sort);
                         try stdout.writeAll(comptime ANSI(" ]\nThe number represents the number of words this letter appears (Repeated letters count once per word).\nTop 5 frequent letters: [ ", .{ 1, 34 }));
+                        try stdout.writeAll("\x1b[1;33m");
                         for (0..5) |i| {
                             const lf = &letter_frequency_arr[i];
                             if (lf.frequency != 0)
-                                try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
+                                try stdout.print("[{c} => {}] ", .{ lf.letter, lf.frequency });
                         }
+                        try stdout.writeAll("\x1b[0m");
                         for (0..5) |pos| {
                             try stdout.print(comptime ANSI(" ]\nTop 5 at position {}: [ ", .{ 1, 34 }), .{pos});
                             std.sort.block(LetterFrequency, &letter_frequency_by_pos[pos], {}, LetterFrequency.sort);
+                            try stdout.writeAll("\x1b[1;33m");
                             for (0..5) |i| {
                                 const lf = &letter_frequency_by_pos[pos][i];
                                 if (lf.frequency != 0)
-                                    try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
+                                    try stdout.print("[{c} => {}] ", .{ lf.letter, lf.frequency });
                             }
+                            try stdout.writeAll("\x1b[0m");
                         }
                         try stdout.writeAll(comptime ANSI(" ]\n", .{ 1, 34 }));
                     },
