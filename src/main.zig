@@ -89,7 +89,9 @@ pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    const stdout = std.io.getStdOut().writer();
+    const stdout_f = std.io.getStdOut();
+    var bufstdout = std.io.bufferedWriter(stdout_f.writer());
+    const stdout = bufstdout.writer();
     const stdin = std.io.getStdIn().reader();
     const MenuString =
         \\Wordle List Check - Add words and rules to eliminate word choices for the game Wordle
@@ -131,6 +133,7 @@ pub fn main() !void {
     main: while (true) {
         try stdout.print(ANSI(MenuString, .{ 1, 34 }), .{});
         try prompt_str(stdout);
+        try bufstdout.flush();
         var buf: [3]u8 = undefined;
         if (stdin.readUntilDelimiterOrEof(&buf, '\n')) |buf_opt| {
             if (buf_opt) |opt| {
@@ -143,6 +146,7 @@ pub fn main() !void {
                         add_loop: while (true) {
                             var word_buf: [7]u8 = undefined;
                             try prompt_str(stdout);
+                            try bufstdout.flush();
                             if (stdin.readUntilDelimiterOrEof(&word_buf, '\n')) |word_buf_opt| {
                                 if (word_buf_opt) |add_word| {
                                     const add_word2 = remove_r(add_word);
@@ -166,6 +170,7 @@ pub fn main() !void {
                         rem_loop: while (true) {
                             var word_buf: [7]u8 = undefined;
                             try prompt_str(stdout);
+                            try bufstdout.flush();
                             if (stdin.readUntilDelimiterOrEof(&word_buf, '\n')) |word_buf_opt| {
                                 if (word_buf_opt) |rem_word| {
                                     const rem_word2 = remove_r(rem_word);
@@ -198,6 +203,7 @@ pub fn main() !void {
                             try rules_added_print(stdout, rule_list);
                             try stdout.writeAll(comptime ANSI(RulesString, .{ 1, 34 }));
                             try prompt_str(stdout);
+                            try bufstdout.flush();
                             var rules_buf: [5]u8 = undefined;
                             if (stdin.readUntilDelimiterOrEof(&rules_buf, '\n')) |rules_buf_opt| {
                                 if (rules_buf_opt) |rule_str| {
