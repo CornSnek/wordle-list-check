@@ -2,3 +2,4 @@
 .vscode/
 zig-out/
 words_long.txt
+words.txt.old

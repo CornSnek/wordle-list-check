@@ -59,6 +59,13 @@ const Rule = union(enum) {
 };
 const WordMap = sorted_list.SortedList(WordNode, WordNode.Context);
 const RuleList = sorted_list.SortedList(Rule, Rule.Context);
+const LetterFrequency = struct {
+    frequency: u32 = 0,
+    letter: u8 = 0,
+    pub fn sort(_: void, lhs: LetterFrequency, rhs: LetterFrequency) bool {
+        return lhs.frequency > rhs.frequency; //Sort by highest to lowest frequency.
+    }
+};
 inline fn prompt_str(stdout: anytype) !void {
     try stdout.writeAll(comptime ANSI(">>>  ", .{ 1, 34 }));
 }
@@ -299,7 +306,13 @@ pub fn main() !void {
                         try stdout.print(ANSI("]\nTotal words: {}\n", .{ 1, 34 }), .{filtered_total});
                     },
                     'w' => {
-                        var letter_frequency: [26]u32 = [1]u32{0} ** 26;
+                        var letter_frequency_arr: [26]LetterFrequency = [1]LetterFrequency{.{}} ** 26;
+                        var letter_frequency_by_pos: [5][26]LetterFrequency = [1][26]LetterFrequency{[1]LetterFrequency{.{}} ** 26} ** 5;
+                        for (0.., 'A'..'Z' + 1) |i, l| {
+                            letter_frequency_arr[i].letter = @truncate(l);
+                            for (0..5) |j|
+                                letter_frequency_by_pos[j][i].letter = @truncate(l);
+                        }
                         skip_word: for (word_map.list.items) |wn| {
                             for (rule_list.list.items) |rule| {
                                 switch (rule) {
@@ -323,20 +336,36 @@ pub fn main() !void {
                                 }
                             }
                             var lmap: u32 = 0;
-                            for (wn.word) |ch| {
+                            for (wn.word, 0..) |ch, pos| {
                                 const letter_i: u8 = ch - 'A';
                                 const adj_ch: u5 = @truncate(letter_i);
                                 if (lmap & (@as(u32, 1) << adj_ch) == 0)
-                                    letter_frequency[letter_i] += 1; //Count each repeated letter once.
+                                    letter_frequency_arr[letter_i].frequency += 1; //Count each repeated letter once.
                                 lmap |= (@as(u32, 1) << adj_ch);
+                                letter_frequency_by_pos[pos][letter_i].frequency += 1;
                             }
                         }
                         try stdout.writeAll(comptime ANSI("Letter frequencies: [ ", .{ 1, 34 }));
-                        for (letter_frequency, 0..) |lf, i| {
-                            if (lf != 0)
-                                try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ 'A' + @as(u8, @truncate(i)), lf });
+                        for (letter_frequency_arr) |lf|
+                            if (lf.frequency != 0)
+                                try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
+                        std.sort.block(LetterFrequency, &letter_frequency_arr, {}, LetterFrequency.sort);
+                        try stdout.writeAll(comptime ANSI(" ]\nThe number represents the number of words this letter appears (Repeated letters count once per word).\nTop 5 frequent letters: [ ", .{ 1, 34 }));
+                        for (0..5) |i| {
+                            const lf = &letter_frequency_arr[i];
+                            if (lf.frequency != 0)
+                                try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
                         }
-                        try stdout.writeAll(comptime ANSI(" ]\nThe number represents the number of words this letter appears (Repeated letters count once per word).\n", .{ 1, 34 }));
+                        for (0..5) |pos| {
+                            try stdout.print(comptime ANSI(" ]\nTop 5 at position {}: [ ", .{ 1, 34 }), .{pos});
+                            std.sort.block(LetterFrequency, &letter_frequency_by_pos[pos], {}, LetterFrequency.sort);
+                            for (0..5) |i| {
+                                const lf = &letter_frequency_by_pos[pos][i];
+                                if (lf.frequency != 0)
+                                    try stdout.print(ANSI("[{c} => {}] ", .{ 1, 33 }), .{ lf.letter, lf.frequency });
+                            }
+                        }
+                        try stdout.writeAll(comptime ANSI(" ]\n", .{ 1, 34 }));
                     },
                     else => {},
                 }
