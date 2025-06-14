@@ -17,6 +17,7 @@ const LetterPosition = struct {
 };
 const Rule = union(enum) {
     exclude: u8,
+    include: u8,
     include_wrong_pos: LetterPosition,
     include_right_pos: LetterPosition,
     ///Order by enum tag, then their payloads
@@ -26,6 +27,7 @@ const Rule = union(enum) {
             if (tag_order != .eq) return tag_order == .lt;
             switch (a) {
                 .exclude => |p| return p < b.exclude,
+                .include => |p| return p < b.include,
                 .include_wrong_pos => |p| {
                     const letter_order = std.math.order(p.letter, b.include_wrong_pos.letter);
                     if (letter_order != .eq) return letter_order == .lt;
@@ -42,6 +44,7 @@ const Rule = union(enum) {
             if (@intFromEnum(a) != @intFromEnum(b)) return false;
             switch (a) {
                 .exclude => |p| return p == b.exclude,
+                .include => |p| return p == b.include,
                 .include_wrong_pos => |p| {
                     if (p.letter != b.include_wrong_pos.letter) return false;
                     return p.pos == b.include_wrong_pos.pos;
@@ -63,9 +66,10 @@ fn rules_added_print(stdout: anytype, rule_list: RuleList) !void {
     try stdout.writeAll(comptime ANSI("Rules Used: [ ", .{ 1, 34 }));
     for (rule_list.list.items) |r| {
         switch (r) {
-            .exclude => |p| try stdout.print(comptime ANSI("'e {c}' ", .{ 1, 31 }), .{p}),
-            .include_wrong_pos => |p| try stdout.print(comptime ANSI("'n {c}{}' ", .{ 1, 33 }), .{ p.letter, p.pos + 1 }),
-            .include_right_pos => |p| try stdout.print(comptime ANSI("'p {c}{}' ", .{ 1, 32 }), .{ p.letter, p.pos + 1 }),
+            .exclude => |p| try stdout.print(comptime ANSI("'e{c}' ", .{ 1, 30 }), .{p}),
+            .include => |p| try stdout.print(comptime ANSI("'i{c}'", .{ 1, 34 }), .{p}),
+            .include_wrong_pos => |p| try stdout.print(comptime ANSI("'n{c}{}' ", .{ 1, 33 }), .{ p.letter, p.pos + 1 }),
+            .include_right_pos => |p| try stdout.print(comptime ANSI("'p{c}{}' ", .{ 1, 32 }), .{ p.letter, p.pos + 1 }),
         }
     }
     try stdout.writeAll(comptime ANSI("]\n", .{ 1, 34 }));
@@ -174,9 +178,10 @@ pub fn main() !void {
                     'c' => word_map.list.clearRetainingCapacity(),
                     'r' => {
                         const RulesString =
-                            \\e to exclude a letter. Format: 'e (letter)'
-                            \\n to include a letter, but not in this position. Format: 'n (letter)1-5'
-                            \\p to include a letter in this exact position. Format: 'p (letter)1-5'
+                            \\e to exclude a letter. Format: 'e(letter)'
+                            \\i to exclude a letter. Format: 'i(letter)'
+                            \\n to include a letter, but not in this position. Format: 'n(letter)1-5'
+                            \\p to include a letter in this exact position. Format: 'p(letter)1-5'
                             \\r to remove all rules. Format: 'r'
                             \\Write the same rule again to remove it.
                             \\Add nothing to return to menu.
@@ -186,7 +191,7 @@ pub fn main() !void {
                             try rules_added_print(stdout, rule_list);
                             try stdout.writeAll(comptime ANSI(RulesString, .{ 1, 34 }));
                             try prompt_str(stdout);
-                            var rules_buf: [6]u8 = undefined;
+                            var rules_buf: [5]u8 = undefined;
                             if (stdin.readUntilDelimiterOrEof(&rules_buf, '\n')) |rules_buf_opt| {
                                 if (rules_buf_opt) |rule_str| {
                                     const rule_str2 = remove_r(rule_str);
@@ -197,25 +202,31 @@ pub fn main() !void {
                                         rule_list.list.clearRetainingCapacity();
                                         try stdout.writeAll(comptime ANSI("Removed all rules.\n", .{ 1, 32 }));
                                         continue;
+                                    } else if (rule_str2.len == 2) {
+                                        switch (rule_str2[0]) {
+                                            'e', 'i' => |r| {
+                                                const letter = std.ascii.toUpper(rule_str2[1]);
+                                                if (letter < 'A' or letter > 'Z') {
+                                                    try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+                                                    continue;
+                                                }
+                                                if (r == 'e') {
+                                                    rule_added_ue = .{ .exclude = letter };
+                                                } else rule_added_ue = .{ .include = letter };
+                                                rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
+                                            },
+                                            else => {
+                                                try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+                                                continue;
+                                            },
+                                        }
                                     } else if (rule_str2.len == 3) {
-                                        if (rule_str2[1] != ' ' or rule_str2[0] != 'e') {
+                                        const num_str = rule_str2[2];
+                                        if (num_str < '1' or num_str > '5') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
                                         }
-                                        const letter = std.ascii.toUpper(rule_str2[2]);
-                                        if (letter < 'A' or letter > 'Z') {
-                                            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                            continue;
-                                        }
-                                        rule_added_ue = .{ .exclude = letter };
-                                        rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
-                                    } else if (rule_str2.len == 4) {
-                                        const num_str = rule_str2[3];
-                                        if (rule_str2[1] != ' ' or num_str < '1' or num_str > '5') {
-                                            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                            continue;
-                                        }
-                                        const letter = std.ascii.toUpper(rule_str2[2]);
+                                        const letter = std.ascii.toUpper(rule_str2[1]);
                                         if (letter < 'A' or letter > 'Z') {
                                             try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
                                             continue;
@@ -265,14 +276,19 @@ pub fn main() !void {
                                 switch (rule) {
                                     .exclude => |p| for (wn.word) |ch|
                                         if (ch == p) continue :skip_word,
+                                    .include => |p| for (wn.word) |ch| {
+                                        if (ch == p) break;
+                                    } else continue :skip_word,
                                     .include_wrong_pos => |p| {
+                                        var contains: bool = false;
                                         for (wn.word, 0..5) |ch, i| {
                                             if (i == p.pos) {
-                                                if (ch == p.letter) continue;
+                                                if (ch == p.letter) continue :skip_word;
                                             } else {
-                                                if (ch == p.letter) break;
+                                                if (ch == p.letter) contains = true;
                                             }
-                                        } else continue :skip_word; //Skip to next word if it doesn't contain this letter
+                                        }
+                                        if (!contains) continue :skip_word; //Skip if letter doesn't exist, or letter is in the wrong position.
                                     },
                                     .include_right_pos => |p| if (wn.word[p.pos] != p.letter) continue :skip_word,
                                 }
@@ -289,14 +305,19 @@ pub fn main() !void {
                                 switch (rule) {
                                     .exclude => |p| for (wn.word) |ch|
                                         if (ch == p) continue :skip_word,
+                                    .include => |p| for (wn.word) |ch| {
+                                        if (ch == p) break;
+                                    } else continue :skip_word,
                                     .include_wrong_pos => |p| {
+                                        var contains: bool = false;
                                         for (wn.word, 0..5) |ch, i| {
                                             if (i == p.pos) {
-                                                if (ch == p.letter) continue;
+                                                if (ch == p.letter) continue :skip_word;
                                             } else {
-                                                if (ch == p.letter) break;
+                                                if (ch == p.letter) contains = true;
                                             }
-                                        } else continue :skip_word; //Skip to next word if it doesn't contain this letter
+                                        }
+                                        if (!contains) continue :skip_word; //Skip if letter doesn't exist, or letter is in the wrong position.
                                     },
                                     .include_right_pos => |p| if (wn.word[p.pos] != p.letter) continue :skip_word,
                                 }
