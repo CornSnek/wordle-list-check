@@ -429,14 +429,14 @@ pub fn main() !void {
                                 letter_frequency_by_pos[pos][letter_i].frequency += 1;
                             }
                         }
+                        std.sort.block(LetterFrequency, &letter_frequency_arr, {}, LetterFrequency.sort);
                         try stdout.writeAll(comptime ANSI("Letter frequencies: [ ", .{ 1, 34 }));
                         try stdout.writeAll("\x1b[1;33m");
                         for (letter_frequency_arr) |lf|
                             if (lf.frequency != 0)
                                 try stdout.print("[{c} => {}] ", .{ lf.letter, lf.frequency });
                         try stdout.writeAll("\x1b[0m");
-                        std.sort.block(LetterFrequency, &letter_frequency_arr, {}, LetterFrequency.sort);
-                        try stdout.writeAll(comptime ANSI(" ]\nThe number represents the number of words this letter appears (Repeated letters count once per word).\nTop 5 frequent letters: [ ", .{ 1, 34 }));
+                        try stdout.writeAll(comptime ANSI(" ]\nThe number represents the number of words this letter appears (Repeated letters count once per word). The letters are sorted from most to least frequent.\nTop 5 frequent letters: [ ", .{ 1, 34 }));
                         try stdout.writeAll("\x1b[1;33m");
                         for (0..5) |i| {
                             const lf = &letter_frequency_arr[i];
@@ -445,7 +445,7 @@ pub fn main() !void {
                         }
                         try stdout.writeAll("\x1b[0m");
                         for (0..5) |pos| {
-                            try stdout.print(comptime ANSI(" ]\nTop 5 at position {}: [ ", .{ 1, 34 }), .{pos});
+                            try stdout.print(comptime ANSI(" ]\nTop 5 at position {}: [ ", .{ 1, 34 }), .{pos + 1});
                             std.sort.block(LetterFrequency, &letter_frequency_by_pos[pos], {}, LetterFrequency.sort);
                             try stdout.writeAll("\x1b[1;33m");
                             for (0..5) |i| {
