@@ -56,6 +56,14 @@ const Rule = union(enum) {
             }
         }
     };
+    pub fn format(self: Rule, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .exclude => |p| try writer.print("e{c}", .{p}),
+            .include => |p| try writer.print("i{c}", .{p}),
+            .include_wrong_pos => |p| try writer.print("n{c}{}", .{ p.letter, p.pos + 1 }),
+            .include_right_pos => |p| try writer.print("p{c}{}", .{ p.letter, p.pos + 1 }),
+        }
+    }
 };
 const WordMap = sorted_list.SortedList(WordNode, WordNode.Context);
 const RuleList = sorted_list.SortedList(Rule, Rule.Context);
@@ -73,10 +81,10 @@ fn rules_added_print(stdout: anytype, rule_list: RuleList) !void {
     try stdout.writeAll(comptime ANSI("Rules Used: [ ", .{ 1, 34 }));
     for (rule_list.list.items) |r| {
         switch (r) {
-            .exclude => |p| try stdout.print(comptime ANSI("'e{c}' ", .{ 1, 30 }), .{p}),
-            .include => |p| try stdout.print(comptime ANSI("'i{c}'", .{ 1, 34 }), .{p}),
-            .include_wrong_pos => |p| try stdout.print(comptime ANSI("'n{c}{}' ", .{ 1, 33 }), .{ p.letter, p.pos + 1 }),
-            .include_right_pos => |p| try stdout.print(comptime ANSI("'p{c}{}' ", .{ 1, 32 }), .{ p.letter, p.pos + 1 }),
+            .exclude => try stdout.print(comptime ANSI("'{}' ", .{ 1, 30 }), .{r}),
+            .include => try stdout.print(comptime ANSI("'{}' ", .{ 1, 34 }), .{r}),
+            .include_wrong_pos => try stdout.print(comptime ANSI("'{}' ", .{ 1, 33 }), .{r}),
+            .include_right_pos => try stdout.print(comptime ANSI("'{}' ", .{ 1, 32 }), .{r}),
         }
     }
     try stdout.writeAll(comptime ANSI("]\n", .{ 1, 34 }));
@@ -85,35 +93,11 @@ fn rules_added_print(stdout: anytype, rule_list: RuleList) !void {
 inline fn remove_r(opt: []u8) []const u8 {
     return if (@import("builtin").os.tag == .windows) std.mem.trimRight(u8, opt, "\r") else opt;
 }
-pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    const stdout_f = std.io.getStdOut();
-    var bufstdout = std.io.bufferedWriter(stdout_f.writer());
-    const stdout = bufstdout.writer();
-    const stdin = std.io.getStdIn().reader();
-    const MenuString =
-        \\Wordle List Check - Add words and rules to eliminate word choices for the game Wordle
-        \\  e to exit
-        \\  a to add words
-        \\  d to delete words
-        \\  c to clear all words in list
-        \\  r to add rules to filter words
-        \\  l to list words
-        \\  f to list words filtered by rules
-        \\  w to count letter frequencies for each word in the word list (filtered by rules)
-        \\
-        \\words.txt can be added and used to add 5-letter space delimited words
-        \\
-    ;
-    var word_map: WordMap = .empty;
-    defer word_map.deinit(allocator);
-    var rule_list: RuleList = .empty;
-    defer rule_list.deinit(allocator);
-    const words_file_res = std.fs.cwd().openFile("words.txt", .{});
+fn load_words(file_name: []const u8, allocator: std.mem.Allocator, stdout: anytype, word_map: *WordMap) !void {
+    const words_file_res = std.fs.cwd().openFile(file_name, .{});
     if (words_file_res) |words_file| {
         defer words_file.close();
+        word_map.list.clearRetainingCapacity();
         const words_buf = try words_file.reader().readAllAlloc(allocator, try std.fmt.parseIntSizeSuffix("1GiB", 10));
         defer allocator.free(words_buf);
         var word_it = std.mem.tokenizeAny(u8, words_buf, "\n\r \t,");
@@ -129,7 +113,104 @@ pub fn main() !void {
                 try stdout.print(ANSI("Unable to add '{s}' to list (Not a 5-letter word).\n", .{ 1, 31 }), .{word});
             }
         }
-    } else |_| {}
+        try stdout.print(ANSI("Loaded words from file '{s}'\n", .{ 1, 32 }), .{file_name});
+    } else |e| {
+        try stdout.print(ANSI("Unable to load file '{s}'. Error: {any}\n", .{ 1, 31 }), .{ file_name, e });
+    }
+}
+fn parse_rule_str(rule_str: []const u8, allocator: std.mem.Allocator, stdout: anytype, rule_list: *RuleList) !void {
+    var rule_added: bool = false;
+    var rule_added_ue: Rule = undefined;
+    if (rule_str.len == 1 and rule_str[0] == 'r') {
+        rule_list.list.clearRetainingCapacity();
+        try stdout.writeAll(comptime ANSI("Removed all rules.\n", .{ 1, 32 }));
+        return;
+    } else if (rule_str.len == 2) {
+        switch (rule_str[0]) {
+            'e', 'i' => |r| {
+                const letter = std.ascii.toUpper(rule_str[1]);
+                if (letter < 'A' or letter > 'Z') {
+                    try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+                    return;
+                }
+                if (r == 'e') {
+                    rule_added_ue = .{ .exclude = letter };
+                } else rule_added_ue = .{ .include = letter };
+                rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
+            },
+            else => {
+                try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+                return;
+            },
+        }
+    } else if (rule_str.len == 3) {
+        const num_str = rule_str[2];
+        if (num_str < '1' or num_str > '5') {
+            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+            return;
+        }
+        const letter = std.ascii.toUpper(rule_str[1]);
+        if (letter < 'A' or letter > 'Z') {
+            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+            return;
+        }
+        if (rule_str[0] == 'n') {
+            rule_added_ue = .{ .include_wrong_pos = .{
+                .letter = letter,
+                .pos = num_str - '1',
+            } };
+            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
+        } else if (rule_str[0] == 'p') {
+            rule_added_ue = .{ .include_right_pos = .{
+                .letter = letter,
+                .pos = num_str - '1',
+            } };
+            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
+        } else {
+            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+            return;
+        }
+    } else {
+        try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
+        return;
+    }
+    if (rule_added) {
+        try stdout.print(ANSI("'{}' rule added\n", .{ 1, 32 }), .{rule_added_ue});
+    } else {
+        _ = rule_list.remove(rule_added_ue);
+        try stdout.print(ANSI("'{}' rule ", .{ 1, 32 }) ++ ANSI("deleted\n", .{ 1, 31 }), .{rule_added_ue});
+    }
+}
+pub fn main() !void {
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    const stdout_f = std.io.getStdOut();
+    var bufstdout = std.io.bufferedWriter(stdout_f.writer());
+    const stdout = bufstdout.writer();
+    const stdin = std.io.getStdIn().reader();
+    const MenuString =
+        \\Wordle List Check - Add words and rules to eliminate word choices for the game Wordle
+        \\  e to exit
+        \\  a to add words
+        \\  b to load a list of words (Removes current words in memory)
+        \\  d to delete words
+        \\  c to clear all words in list
+        \\  r to add rules to filter words
+        \\  s to save rules list to a file
+        \\  t to load rules list from a file (Removes current rules in memory)
+        \\  l to list words
+        \\  f to list words filtered by rules
+        \\  w to count letter frequencies for each word in the word list (filtered by rules)
+        \\
+        \\words.txt can be created and used to add 5-letter space delimited words on program startup
+        \\
+    ;
+    var word_map: WordMap = .empty;
+    defer word_map.deinit(allocator);
+    var rule_list: RuleList = .empty;
+    defer rule_list.deinit(allocator);
+    try load_words("words.txt", allocator, stdout, &word_map);
     main: while (true) {
         try stdout.print(ANSI(MenuString, .{ 1, 34 }), .{});
         try prompt_str(stdout);
@@ -164,6 +245,18 @@ pub fn main() !void {
                                 }
                             } else |_| continue;
                         }
+                    },
+                    'b' => {
+                        try stdout.writeAll(comptime ANSI("Write file name to load words. This will overwrite words in memory. Type nothing to cancel.\n", .{ 1, 34 }));
+                        try prompt_str(stdout);
+                        try bufstdout.flush();
+                        const load_res = stdin.readUntilDelimiterAlloc(allocator, '\n', 1024);
+                        if (load_res) |load_str| {
+                            defer allocator.free(load_str);
+                            const load_str2 = remove_r(load_str);
+                            if (load_str2.len != 0)
+                                try load_words(load_str2, allocator, stdout, &word_map);
+                        } else |e| try stdout.print(ANSI("An error occured: {any}\n", .{ 1, 31 }), .{e});
                     },
                     'd' => {
                         try stdout.writeAll(comptime ANSI("Delete a 5-letter word in the list. Add nothing to return to menu.\n", .{ 1, 34 }));
@@ -209,70 +302,51 @@ pub fn main() !void {
                                 if (rules_buf_opt) |rule_str| {
                                     const rule_str2 = remove_r(rule_str);
                                     if (rule_str2.len == 0) break :rules_loop;
-                                    var rule_added: bool = false;
-                                    var rule_added_ue: Rule = undefined;
-                                    if (rule_str2.len == 1 and rule_str2[0] == 'r') {
-                                        rule_list.list.clearRetainingCapacity();
-                                        try stdout.writeAll(comptime ANSI("Removed all rules.\n", .{ 1, 32 }));
-                                        continue;
-                                    } else if (rule_str2.len == 2) {
-                                        switch (rule_str2[0]) {
-                                            'e', 'i' => |r| {
-                                                const letter = std.ascii.toUpper(rule_str2[1]);
-                                                if (letter < 'A' or letter > 'Z') {
-                                                    try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                                    continue;
-                                                }
-                                                if (r == 'e') {
-                                                    rule_added_ue = .{ .exclude = letter };
-                                                } else rule_added_ue = .{ .include = letter };
-                                                rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
-                                            },
-                                            else => {
-                                                try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                                continue;
-                                            },
-                                        }
-                                    } else if (rule_str2.len == 3) {
-                                        const num_str = rule_str2[2];
-                                        if (num_str < '1' or num_str > '5') {
-                                            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                            continue;
-                                        }
-                                        const letter = std.ascii.toUpper(rule_str2[1]);
-                                        if (letter < 'A' or letter > 'Z') {
-                                            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                            continue;
-                                        }
-                                        if (rule_str2[0] == 'n') {
-                                            rule_added_ue = .{ .include_wrong_pos = .{
-                                                .letter = letter,
-                                                .pos = num_str - '1',
-                                            } };
-                                            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
-                                        } else if (rule_str2[0] == 'p') {
-                                            rule_added_ue = .{ .include_right_pos = .{
-                                                .letter = letter,
-                                                .pos = num_str - '1',
-                                            } };
-                                            rule_added = try rule_list.insert_unique(allocator, rule_added_ue);
-                                        } else {
-                                            try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                            continue;
-                                        }
-                                    } else {
-                                        try stdout.writeAll(comptime ANSI("Invalid Rule Format.\n", .{ 1, 33 }));
-                                        continue;
-                                    }
-                                    if (rule_added) {
-                                        try stdout.print(ANSI("'{s}' rule added.\n", .{ 1, 32 }), .{rule_str2});
-                                    } else {
-                                        _ = rule_list.remove(rule_added_ue);
-                                        try stdout.print(ANSI("'{s}' rule deleted.\n", .{ 1, 32 }), .{rule_str2});
-                                    }
+                                    try parse_rule_str(rule_str2, allocator, stdout, &rule_list);
                                 }
                             } else |_| continue;
                         }
+                    },
+                    's' => {
+                        try stdout.writeAll(comptime ANSI("Write file name to save rules. Type nothing to cancel.\n", .{ 1, 34 }));
+                        try prompt_str(stdout);
+                        try bufstdout.flush();
+                        const save_res = stdin.readUntilDelimiterAlloc(allocator, '\n', 1024);
+                        if (save_res) |save_str| {
+                            defer allocator.free(save_str);
+                            const save_str2 = remove_r(save_str);
+                            if (save_str2.len != 0) {
+                                const save_file_res = std.fs.cwd().createFile(save_str2, .{});
+                                if (save_file_res) |save_file| {
+                                    defer save_file.close();
+                                    for (rule_list.list.items) |r|
+                                        try save_file.writer().print("{}\n", .{r});
+                                    try stdout.print(ANSI("Saved rules to '{s}'\n", .{ 1, 32 }), .{save_str2});
+                                } else |e| try stdout.print(ANSI("An error occured when saving rules to file '{s}': {any}\n", .{ 1, 31 }), .{ save_str2, e });
+                            }
+                        } else |e| try stdout.print(ANSI("An error occured: {any}\n", .{ 1, 31 }), .{e});
+                    },
+                    't' => {
+                        try stdout.writeAll(comptime ANSI("Write file name to load rules. This will overwrite rules in memory. Type nothing to cancel.\n", .{ 1, 34 }));
+                        try prompt_str(stdout);
+                        try bufstdout.flush();
+                        const load_res = stdin.readUntilDelimiterAlloc(allocator, '\n', 1024);
+                        if (load_res) |load_str| {
+                            defer allocator.free(load_str);
+                            const load_str2 = remove_r(load_str);
+                            if (load_str2.len != 0) {
+                                const load_file_res = std.fs.cwd().openFile(load_str2, .{});
+                                if (load_file_res) |load_file| {
+                                    defer load_file.close();
+                                    const rules_buf = try load_file.reader().readAllAlloc(allocator, try std.fmt.parseIntSizeSuffix("1GiB", 10));
+                                    defer allocator.free(rules_buf);
+                                    rule_list.list.clearRetainingCapacity();
+                                    var rule_it = std.mem.tokenizeAny(u8, rules_buf, "\n\r \t,");
+                                    while (rule_it.next()) |rule_str|
+                                        try parse_rule_str(rule_str, allocator, stdout, &rule_list);
+                                } else |e| try stdout.print(ANSI("An error occured when loading rules from file '{s}': {any}\n", .{ 1, 31 }), .{ load_str2, e });
+                            }
+                        } else |e| try stdout.print(ANSI("An error occured: {any}\n", .{ 1, 31 }), .{e});
                     },
                     'l' => {
                         try stdout.writeAll(comptime ANSI("Words in list: [ ", .{ 1, 34 }));

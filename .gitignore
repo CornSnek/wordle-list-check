@@ -2,4 +2,6 @@
 .vscode/
 zig-out/
 words_long.txt
+words_longer.txt
+words_longer_sorted.txt
 words.txt.old
