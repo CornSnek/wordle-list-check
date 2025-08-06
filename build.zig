@@ -14,6 +14,8 @@ pub fn build(b: *std.Build) !void {
 
     const install_words = b.addInstallFile(b.path("words.txt"), "bin/words.txt");
     exe.step.dependOn(&install_words.step);
+    const install_used = b.addInstallFile(b.path("words.txt"), "bin/used.txt");
+    exe.step.dependOn(&install_used.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

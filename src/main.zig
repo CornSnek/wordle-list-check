@@ -202,17 +202,22 @@ pub fn main() !void {
         \\  l to list words
         \\  f to list words filtered by rules
         \\  w to count letter frequencies for each word in the word list (filtered by rules)
+        \\  u to enable used word filtering (Currently {s})
         \\
         \\words.txt can be created and used to add 5-letter space delimited words on program startup
         \\
     ;
     var word_map: WordMap = .empty;
     defer word_map.deinit(allocator);
+    var used_map: WordMap = .empty;
+    defer used_map.deinit(allocator);
     var rule_list: RuleList = .empty;
     defer rule_list.deinit(allocator);
+    var used_filter: bool = false;
     try load_words("words.txt", allocator, stdout, &word_map);
+    try load_words("used.txt", allocator, stdout, &used_map);
     main: while (true) {
-        try stdout.print(ANSI(MenuString, .{ 1, 34 }), .{});
+        try stdout.print(ANSI(MenuString, .{ 1, 34 }), .{if (used_filter) "On" else "Off"});
         try prompt_str(stdout);
         try bufstdout.flush();
         var buf: [3]u8 = undefined;
@@ -351,10 +356,16 @@ pub fn main() !void {
                     'l' => {
                         try stdout.writeAll(comptime ANSI("Words in list: [ ", .{ 1, 34 }));
                         try stdout.writeAll("\x1b[1;32m");
-                        for (word_map.list.items) |wn|
+                        var total_words: usize = 0;
+                        for (word_map.list.items) |wn| {
+                            if (used_filter) {
+                                if (used_map.exists(wn)) continue;
+                            }
+                            total_words += 1;
                             try stdout.print("{s} ", .{wn.word});
+                        }
                         try stdout.writeAll("\x1b[0m");
-                        try stdout.print(ANSI("]\nTotal words: {}\n", .{ 1, 34 }), .{word_map.list.items.len});
+                        try stdout.print(ANSI("]\nTotal words: {}\n", .{ 1, 34 }), .{total_words});
                     },
                     'f' => {
                         try rules_added_print(stdout, rule_list);
@@ -362,6 +373,9 @@ pub fn main() !void {
                         try stdout.writeAll("\x1b[1;32m");
                         var filtered_total: usize = 0;
                         skip_word: for (word_map.list.items) |wn| {
+                            if (used_filter) {
+                                if (used_map.exists(wn)) continue;
+                            }
                             for (rule_list.list.items) |rule| {
                                 switch (rule) {
                                     .exclude => |p| for (wn.word) |ch|
@@ -398,6 +412,9 @@ pub fn main() !void {
                                 letter_frequency_by_pos[j][i].letter = @truncate(l);
                         }
                         skip_word: for (word_map.list.items) |wn| {
+                            if (used_filter) {
+                                if (used_map.exists(wn)) continue;
+                            }
                             for (rule_list.list.items) |rule| {
                                 switch (rule) {
                                     .exclude => |p| for (wn.word) |ch|
@@ -457,6 +474,7 @@ pub fn main() !void {
                         }
                         try stdout.writeAll(comptime ANSI(" ]\n", .{ 1, 34 }));
                     },
+                    'u' => used_filter = !used_filter,
                     else => {},
                 }
             } else continue;

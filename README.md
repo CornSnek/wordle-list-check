@@ -19,6 +19,8 @@ LINES
 
 Words can be case-insensitive, and will always output as uppercase.
 
+A `used.txt` file inside the binary path can be used to filter out words already used by wordle (If they have not used repeat words yet). It uses the same format as `words.txt` above. Use the `u` option to filter out the used words.
+
 ## Rules usage
 There are 3 types of Wordle rules to filter words. There is an additional rule added where a letter exists as a hint.
 * `e(letter)` - This filter excludes any words that contain this letter. This is the Wordle equivalent of a gray letter.
