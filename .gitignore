@@ -4,3 +4,4 @@ zig-out/
 used*.txt
 words*.txt
 words.txt.old
+old_version/
